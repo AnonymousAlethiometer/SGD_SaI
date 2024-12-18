@@ -4,6 +4,7 @@ Date: 2024-08-10 15:25:06
 LastEditTime: 2024-12-14 18:19:46
 LastEditors: Unknown
 Description: 
+v1.0.4 - normalize the gnsr with max value
 v1.0.3 - remove warmup_step function for out-of-box usage, no need to call warmup_step function explicitly, friendly for distributed training, fix some potential bugs
 v1.0.2 - add warmup_step function
 FilePath: /SGD_SaI/sgd_sai/sgd_sai.py
@@ -47,6 +48,7 @@ class SGD_sai(Optimizer):
         defaults = dict(lr=lr, momentum=momentum, eps=eps, weight_decay=weight_decay)
         super(SGD_sai, self).__init__(params, defaults)
         self.has_warmup = False
+        self.max_gsnr = -1
 
 
     def __setstate__(self, state):
@@ -86,6 +88,7 @@ class SGD_sai(Optimizer):
                 # grad_norm_snr = (grad_norm / sigma) if sigma != 0 else grad_norm
                 grad_norm_snr = (grad_norm / (sigma + group['eps']))
                 param_state['gsnr'] = grad_norm_snr
+                self.max_gsnr = max(self.max_gsnr, grad_norm_snr)
 
         self.has_warmup = True
         return loss
@@ -131,7 +134,7 @@ class SGD_sai(Optimizer):
                         buf.mul_(momentum).add_(d_p, alpha=momentum_factor)
                 # d_p = buf
 
-                step_size = lr * param_state['gsnr'] 
+                step_size = lr * param_state['gsnr'] / self.max_gsnr
                 # p.data.mul_(1 - weight_decay * lr).add_(d_p, alpha=-step_size)
                 p.data.mul_(decay_factor).add_(buf, alpha=-step_size)
 
