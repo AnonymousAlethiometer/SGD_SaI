@@ -1,9 +1,10 @@
 '''
 Author: Unknown
 Date: 2024-08-10 15:25:06
-LastEditTime: 2024-12-14 18:19:46
+LastEditTime: 2025-01-27 16:45:46
 LastEditors: Unknown
 Description: 
+v1.1.0 - add a simplified version of SGD_sai, using the equivalent sqrt(numel) to replace g-SNR calculatioin, a more faster approximation
 v1.0.3 - remove warmup_step function for out-of-box usage, no need to call warmup_step function explicitly, friendly for distributed training, fix some potential bugs
 v1.0.2 - add warmup_step function
 FilePath: /SGD_SaI/sgd_sai/sgd_sai.py
@@ -64,31 +65,27 @@ class SGD_sai(Optimizer):
         print("-"*40)
         print('warmup in SGD_sai')
         print("-"*40)
-
-        loss = None
         if closure is not None:
-            with torch.enable_grad():
-                loss = closure()
+            print('*Deprecated in 1.1.0, to be removed in 1.1.1.Please remove the closure argument in warmup_step function.')
 
         for group in self.param_groups:
-            lr = group['lr']
             for p in group['params']:
                 if p.grad is None:
                     continue
                 d_p = p.grad.data
                 param_state = self.state[p]
                 
-                # calculate layer-wise grad_norm with std
-                # sigma = torch.tensor(0.) if torch.isnan(sigma) else sigma
-                # use nan_to_num to avoid nan value, and replace it with 0. nan happens when torch.tensor(4.).std() is called, the biased std will return nan
-                sigma = d_p.std().nan_to_num()
-                grad_norm = d_p.norm()
-                # grad_norm_snr = (grad_norm / sigma) if sigma != 0 else grad_norm
-                grad_norm_snr = (grad_norm / (sigma + group['eps']))
+                # # calculate layer-wise grad_norm with std ## before version 1.1.0
+                # # sigma = torch.tensor(0.) if torch.isnan(sigma) else sigma
+                # # use nan_to_num to avoid nan value, and replace it with 0. nan happens when torch.tensor(4.).std() is called, the biased std will return nan
+                # sigma = d_p.std().nan_to_num()
+                # grad_norm = d_p.norm()
+                # # grad_norm_snr = (grad_norm / sigma) if sigma != 0 else grad_norm
+                # grad_norm_snr = (grad_norm / (sigma + group['eps']))
+                grad_norm_snr = d_p.numel() ** 0.5  # after version 1.1.0: sqrt(numel) as an approximation of g-SNR, a more faster calculation
                 param_state['gsnr'] = grad_norm_snr
 
         self.has_warmup = True
-        return loss
 
     @torch.no_grad()
     def step(self, closure=None):
@@ -99,7 +96,7 @@ class SGD_sai(Optimizer):
                 and returns the loss.
         """
         if not self.has_warmup:
-            self.warmup_step(closure)
+            self.warmup_step()
 
         loss = None
         if closure is not None:
